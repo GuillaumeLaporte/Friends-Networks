@@ -1,10 +1,13 @@
 import torch 
 import torch.nn.functional as F
+import torchxrayvision
 
-#The following lists contain the X-ray model split at different levels.
+
 #Some image coming from the X-Ray Vision dataset
 testImage = 1
 
+
+#The following lists contain the X-ray model split at different levels.
 #Each elements of these lists is a succession of layers. 
 #The index is the position of the split.
 #We will take each of these successions of layers to construct the new networks to be analysed.
@@ -47,6 +50,6 @@ class MergedNetwork(torch.nn.Module):
         lowerLayersXRayModelOutput = self.lowerXRayModelBranch(x)
 
 
-asdf = 1
-testObject = MergedNetwork(asdf, asdf,asdf)
+#asdf = 1
+#testObject = MergedNetwork(asdf, asdf,asdf)
 print("asdf")
