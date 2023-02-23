@@ -17,7 +17,7 @@ img = transform(img)
 img = torch.from_numpy(img)
 img = torch.unsqueeze(img, 0)
 
-xRayVisionModel = xrv.models.ResNet(weights="resnet50-res512-all")
+xRayVisionModel = xrv.models.DenseNet(weights="densenet121-res224-nih") # NIH chest X-ray8
 
 
 writer = SummaryWriter("D:\\School\\2023 Winter\\Term Project\\Model Visualization\\")

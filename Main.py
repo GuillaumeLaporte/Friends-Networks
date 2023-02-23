@@ -22,9 +22,10 @@ xRayModelsLayerToBeReplaced = []
 #Each element of the list is a succession of layers up to a different level in the ImageNet model.
 ImageNetModelsLowerLayers = []
 
-#The models that we are going to use:
+#The models that we are going to use are below. We choose the "densenet121-res224-nih" model since we know on which dataset it was trained 
+#(the NIH dataset at https://nihcc.app.box.com/v/ChestXray-NIHCC)
 imageNetModel = models.resnet18(pretrained = True)
-xRayVisionModel = xrv.models.ResNet(weights="resnet50-res512-all")
+xRayVisionModel = xrv.models.DenseNet(weights="densenet121-res224-nih") # NIH chest X-ray8
 
 def outputSizeOfLowerLayersOfXRayModel(lowerLayers, testImage):
     return lowerLayers(testImage).size()
