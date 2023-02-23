@@ -1,7 +1,7 @@
 import torch 
 import torch.nn.functional as F
-import torchxrayvision
-
+import torchxrayvision as xrv
+from torchvision import models
 
 #Some image coming from the X-Ray Vision dataset
 testImage = 1
@@ -21,6 +21,10 @@ xRayModelsLayerToBeReplaced = []
 #The following list contains the lower layers of the ImageNet model at different level. 
 #Each element of the list is a succession of layers up to a different level in the ImageNet model.
 ImageNetModelsLowerLayers = []
+
+#The models that we are going to use:
+imageNetModel = models.resnet18(pretrained = True)
+xRayVisionModel = xrv.models.ResNet(weights="resnet50-res512-all")
 
 def outputSizeOfLowerLayersOfXRayModel(lowerLayers, testImage):
     return lowerLayers(testImage).size()
