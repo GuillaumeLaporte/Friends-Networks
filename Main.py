@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
+import torch.optim as optim
+import torchvision
+import torchvision.transforms as transforms
+
 
 
 #The following list contains the lower layers of the ImageNet model at different level. 
@@ -70,7 +74,7 @@ class MergedNetwork(torch.nn.Module):
     def forward(self, x):
         #The ImageNet model (ResNet18) takes as input 224 by 224 images (with 3 channels).
         #Cifar10 Images are 32 by 32 and are color images, so have 3 channels (I think).
-        inputToImageNet = F.interpolate(x, size = (224, 224), mode = "bilinear")
+        inputToImageNet = F.interpolate(x, size = (224, 224))
         lowerLayersImageNetOutput = self.lowerLayersOfImageNet(inputToImageNet)
 
         #Becareful here! We don't want to interpolate in the channel dimension!
@@ -84,6 +88,8 @@ class MergedNetwork(torch.nn.Module):
         outputOfNewLayer = self.newConvolutionLayer(inputTensorToTheNewLayer)
 
         return self.upperLayersOfSimpleModel(outputOfNewLayer)
+
+#The following model architecture is taken from  https://github.com/Xinyi6/CIFAR10-CNN-by-Keras/blob/master/lic/model2_3.ipynb
 
 class Net(nn.Module):
     def __init__(self):
@@ -161,12 +167,68 @@ class Net(nn.Module):
         return x
 
 
+#The training loops and the code for loading the Cifar10 dataset is taken from the following Pytorch tutorial:
+# https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
+
+#We load below the Cifar10 dataset
+
+transform = transforms.Compose(
+    [transforms.ToTensor(),
+     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+batch_size = 4
+
+trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
+                                        download=True, transform=transform)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
+                                          shuffle=True, num_workers=2)
+
+testset = torchvision.datasets.CIFAR10(root='./data', train=False,
+                                       download=True, transform=transform)
+testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
+                                         shuffle=False, num_workers=2)
+
+classes = ('plane', 'car', 'bird', 'cat',
+           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+
+#We train below the simple model that specializes on classifiying Cifar10 images
+
 simpleModel = Net()
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(simpleModel.parameters(), lr=0.001, momentum=0.9)
+for epoch in range(5):  # loop over the dataset multiple times
+
+    running_loss = 0.0
+    for i, data in enumerate(trainloader, 0):
+        # get the inputs; data is a list of [inputs, labels]
+        inputs, labels = data
+
+        # zero the parameter gradients
+        optimizer.zero_grad()
+
+        # forward + backward + optimize
+        outputs = simpleModel(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        # print statistics
+        running_loss += loss.item()
+        if i % 2000 == 1999:    # print every 2000 mini-batches
+            print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
+            running_loss = 0.0
+
+print('Finished Training')
 
 numberOfChildren = len(list(simpleModel.children()))
 
 partsOfSimpleModellist = []
 
+
+#Below we are selecting the lower layers of the ImageNet models and the simple model; as well as the upper layers of the simple model
+#We are also selecting the layer that is going to be replaced; whose parameters are going to be copied in the new layer (G)
 
 for layerToBeReplacedNumber in range(1,5):
 
@@ -207,6 +269,11 @@ for layerToBeReplacedNumber in range(1,5):
   partsOfSimpleModellist[layerToBeReplacedNumber - 1]["Lower Layers"] = torch.nn.Sequential(*lowerLayers)
   partsOfSimpleModellist[layerToBeReplacedNumber - 1]["Upper Layers"] = torch.nn.Sequential(*upperLayers)
   partsOfSimpleModellist[layerToBeReplacedNumber - 1]["Layer to be replaced"] = layerToBeReplaced
+  
+
+#Below we are freezing the layers that should not get updated during training; because we only want to train the layer (G)
+#We are probably freezing and re-freezing multiple times the same layers since we don't deepcopy the layers when we select
+#them.. But this works anyway..
 
 for partsOfSimpleModelIndex in range(4):
   for child in partsOfSimpleModellist[partsOfSimpleModelIndex]["Lower Layers"]:
@@ -216,16 +283,104 @@ for partsOfSimpleModelIndex in range(4):
   for child in partsOfSimpleModellist[partsOfSimpleModelIndex]["Upper Layers"]:
     for param in child.parameters():
       param.requires_grad = False
+      
 
-specificationsOfLayerToBeReplaced = {}
-specificationsOfLayerToBeReplaced["outChannels"] = 256
-specificationsOfLayerToBeReplaced["kernelSize"] = 3
-specificationsOfLayerToBeReplaced["padding"] = "same"
+#Below is the definition of some data that has to be passed to the MergedNetwork's constructor (the __init__ function), 
+#to specify the number of output channels, the kernel sizes, and the padding type of the new merging layer (G)
 
-someMergedNetwork = MergedNetwork(partialImageNetModels[2], partsOfSimpleModellist[2]["Lower Layers"], partsOfSimpleModellist[2]["Upper Layers"], partsOfSimpleModellist[2]["Layer to be replaced"], specificationsOfLayerToBeReplaced, 4)
-someMergedNetwork(torch.ones(4, 3, 32, 32))
+specificationsOfLayerToBeReplaced0 = {}
+specificationsOfLayerToBeReplaced0["outChannels"] = 64
+specificationsOfLayerToBeReplaced0["kernelSize"] = 3
+specificationsOfLayerToBeReplaced0["padding"] = "same"
 
-#print(simpleModel)
-#print(partsOfSimpleModellist[1]["Lower Layers"])
-#print(partsOfSimpleModellist[1]["Upper Layers"])
-#print(partsOfSimpleModellist[1]["Layer to be replaced"])
+specificationsOfLayerToBeReplaced1 = {}
+specificationsOfLayerToBeReplaced1["outChannels"] = 128
+specificationsOfLayerToBeReplaced1["kernelSize"] = 3
+specificationsOfLayerToBeReplaced1["padding"] = "same"
+
+specificationsOfLayerToBeReplaced2 = {}
+specificationsOfLayerToBeReplaced2["outChannels"] = 256
+specificationsOfLayerToBeReplaced2["kernelSize"] = 3
+specificationsOfLayerToBeReplaced2["padding"] = "same"
+
+specificationsOfLayerToBeReplaced3 = {}
+specificationsOfLayerToBeReplaced3["outChannels"] = 512
+specificationsOfLayerToBeReplaced3["kernelSize"] = 3
+specificationsOfLayerToBeReplaced3["padding"] = "same"
+
+specificationsOfLayersToBeReplaced = [specificationsOfLayerToBeReplaced0, specificationsOfLayerToBeReplaced1, specificationsOfLayerToBeReplaced2, specificationsOfLayerToBeReplaced3]
+
+mergedNetworks = []
+accuraciesForMergedNetworks = []
+for indexOfImageNetLayer in range(4):
+  accuraciesForMergedNetworks.append([])
+  mergedNetworks.append([])
+
+
+#Below we construct the merged networks from the lower layers of the ImageNet model and the layers of the simple model
+for indexOfImageNetLayer in range(4):
+  for indexOfSimpleNetworkLayer in range(4):
+    mergedNetworks[indexOfImageNetLayer].append(MergedNetwork(partialImageNetModels[indexOfImageNetLayer], partsOfSimpleModellist[indexOfSimpleNetworkLayer]["Lower Layers"], partsOfSimpleModellist[indexOfSimpleNetworkLayer]["Upper Layers"], partsOfSimpleModellist[indexOfSimpleNetworkLayer]["Layer to be replaced"], specificationsOfLayersToBeReplaced[indexOfSimpleNetworkLayer], 4))
+
+
+#Below we train all of the merged networks
+
+for indexOfImageNetLayer in range(4):
+  for indexOfSimpleNetworkLayer in range(4):
+
+    mergedNetwork = mergedNetworks[indexOfImageNetLayer][indexOfSimpleNetworkLayer]
+    criterion = nn.CrossEntropyLoss()
+    optimizerForMergedNetwork = optim.SGD(mergedNetwork.parameters(), lr=0.001, momentum=0.9)
+
+    for epoch in range(2):  # loop over the dataset multiple times
+
+        running_loss = 0.0
+        for i, data in enumerate(trainloader, 0):
+            # get the inputs; data is a list of [inputs, labels]
+            inputs, labels = data
+
+            # zero the parameter gradients
+            optimizerForMergedNetwork.zero_grad()
+
+            # forward + backward + optimize
+            outputs = mergedNetwork(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizerForMergedNetwork.step()
+
+            # print statistics
+            running_loss += loss.item()
+            if i % 500 == 499:    # print every 500 mini-batches
+                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 500:.3f}')
+                running_loss = 0.0
+
+print('Finished Training')
+
+#Below we compute all of the accuracies of the trained merged networks on a test set
+
+for indexOfImageNetLayer in range(4):
+  for indexOfSimpleNetworkLayer in range(4):
+
+    mergedNetwork = mergedNetworks[indexOfImageNetLayer][indexOfSimpleNetworkLayer]
+
+    correct = 0
+    total = 0
+    index = 0
+    # since we're not training, we don't need to calculate the gradients for our outputs
+    with torch.no_grad():
+        for data in testloader:
+            images, labels = data
+            # calculate outputs by running images through the network
+            outputs = mergedNetwork(images)
+            # the class with the highest energy is what we choose as prediction
+            if(index % 100 == 99):
+              print("index: ", index)
+            index = index + 1
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    print(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
+    accuraciesForMergedNetworks[indexOfImageNetLayer].append( 100 * correct // total )
+
+
