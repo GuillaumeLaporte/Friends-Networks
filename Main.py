@@ -5,8 +5,11 @@ from torchvision import models
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
+import time
 
-
+trainSimpleModel = False
+everythingAlreadyTrained = True
+accuraciesAlreadyComputed = True
 
 #The following list contains the lower layers of the ImageNet model at different level. 
 #Each element of the list is a succession of layers up to a different level in the ImageNet model.
@@ -65,7 +68,6 @@ class MergedNetwork(torch.nn.Module):
           param.requires_grad = True
 
         ###########################################################################################
-        #Becareful here! We don't want to interpolate in the channel dimension!
         targetFeatureMapWidth = self.outputSizeValuesOfLowerLayersOfSimpleModel[2]
         targetFeatureMapHeight = self.outputSizeValuesOfLowerLayersOfSimpleModel[3]
         self.targetShapeOfImageNetOutput = (targetFeatureMapWidth, targetFeatureMapHeight)
@@ -74,7 +76,7 @@ class MergedNetwork(torch.nn.Module):
     def forward(self, x):
         #The ImageNet model (ResNet18) takes as input 224 by 224 images (with 3 channels).
         #Cifar10 Images are 32 by 32 and are color images, so have 3 channels (I think).
-        inputToImageNet = F.interpolate(x, size = (224, 224))
+        inputToImageNet = F.interpolate(x, size = (224, 224), mode = "bilinear")
         lowerLayersImageNetOutput = self.lowerLayersOfImageNet(inputToImageNet)
 
         #Becareful here! We don't want to interpolate in the channel dimension!
@@ -167,7 +169,7 @@ class Net(nn.Module):
         return x
 
 
-#The training loops and the code for loading the Cifar10 dataset is taken from the following Pytorch tutorial:
+#The training loops, the code for loading the Cifar10 dataset and computing the accuracy is taken from the following Pytorch tutorial:
 # https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 
 #We load below the Cifar10 dataset
@@ -178,57 +180,89 @@ transform = transforms.Compose(
 
 batch_size = 4
 
-trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
-                                        download=True, transform=transform)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
-                                          shuffle=True, num_workers=2)
+trainset = torchvision.datasets.CIFAR10(root='D:\\School\\2023 Winter\\Term Project\\Program Output', train=True,
+                                        download=False, transform=transform)
 
-testset = torchvision.datasets.CIFAR10(root='./data', train=False,
-                                       download=True, transform=transform)
+device = torch.device("cuda")
+
+#trainset = (torch.from_numpy(trainset.data)).to(device)
+#dataInTrainSet = []
+#for image in trainset.data:
+#    dataInTrainSet.append(torch.tensor(image).to(device))
+    
+#trainset.data = dataInTrainSet
+
+
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
+                                          shuffle=True, num_workers=0)
+
+
+testset = torchvision.datasets.CIFAR10(root='D:\\School\\2023 Winter\\Term Project\\Program Output', train=False,
+                                       download=False, transform=transform)
+
+#dataInTestSet = []
+#for image in testset.data:
+#    dataInTestSet.append(torch.tensor(image).to(device))
+
+#testset.data = dataInTestSet
+
+
+
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
-                                         shuffle=False, num_workers=2)
+                                         shuffle=False, num_workers=0)
 
 classes = ('plane', 'car', 'bird', 'cat',
            'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 
-#We train below the simple model that specializes on classifiying Cifar10 images
+#We train below the simple model that specializes on classifiying Cifar10 images. We made a test on Google Colab
+#and we saw that there is no improvement in training the network over 8 epochs. The accuracy on a validation set does
+#not increase over 64%
 
-simpleModel = Net()
+if trainSimpleModel == True:
+    simpleModel = Net()
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(simpleModel.parameters(), lr=0.001, momentum=0.9)
-for epoch in range(5):  # loop over the dataset multiple times
 
-    running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
-        # get the inputs; data is a list of [inputs, labels]
-        inputs, labels = data
+    #simpleModel.to(device)
 
-        # zero the parameter gradients
-        optimizer.zero_grad()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(simpleModel.parameters(), lr=0.001, momentum=0.9)
+    for epoch in range(8):  # loop over the dataset multiple times
 
-        # forward + backward + optimize
-        outputs = simpleModel(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        print("Time now: ", time.perf_counter())
 
-        # print statistics
-        running_loss += loss.item()
-        if i % 2000 == 1999:    # print every 2000 mini-batches
-            print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
-            running_loss = 0.0
+        running_loss = 0.0
+        for i, data in enumerate(trainloader, 0):
+            # get the inputs; data is a list of [inputs, labels]
+            inputs, labels = data
 
-print('Finished Training')
+            # zero the parameter gradients
+            optimizer.zero_grad()
+
+            # forward + backward + optimize
+            outputs = simpleModel(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            #print statistics
+            running_loss += loss.item()
+            if i % 2000 == 1999:    # print every 2000 mini-batches
+                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
+                running_loss = 0.0
+
+    print('Finished Training the Simple Model')
+    torch.save(simpleModel,"D:\\School\\2023 Winter\\Term Project\\Program Output\\Simple Model.pt")
+
+else:
+    simpleModel = torch.load("D:\\School\\2023 Winter\\Term Project\\Program Output\\Simple Model.pt")
+
+#Below we are selecting the lower layers of the ImageNet models and the simple model; as well as the upper layers of the simple model
+#We are also selecting the layer that is going to be replaced; whose parameters are going to be copied in the new layer (G)
 
 numberOfChildren = len(list(simpleModel.children()))
 
 partsOfSimpleModellist = []
-
-
-#Below we are selecting the lower layers of the ImageNet models and the simple model; as well as the upper layers of the simple model
-#We are also selecting the layer that is going to be replaced; whose parameters are going to be copied in the new layer (G)
 
 for layerToBeReplacedNumber in range(1,5):
 
@@ -325,62 +359,83 @@ for indexOfImageNetLayer in range(4):
 
 #Below we train all of the merged networks
 
-for indexOfImageNetLayer in range(4):
-  for indexOfSimpleNetworkLayer in range(4):
+if everythingAlreadyTrained == False:
+    for indexOfImageNetLayer in range(4):
+      for indexOfSimpleNetworkLayer in range(4):
 
-    mergedNetwork = mergedNetworks[indexOfImageNetLayer][indexOfSimpleNetworkLayer]
-    criterion = nn.CrossEntropyLoss()
-    optimizerForMergedNetwork = optim.SGD(mergedNetwork.parameters(), lr=0.001, momentum=0.9)
+        mergedNetwork = mergedNetworks[indexOfImageNetLayer][indexOfSimpleNetworkLayer]
+        criterion = nn.CrossEntropyLoss()
+        optimizerForMergedNetwork = optim.SGD(mergedNetwork.parameters(), lr=0.001, momentum=0.9)
 
-    for epoch in range(2):  # loop over the dataset multiple times
 
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
+        for epoch in range(2):  # loop over the dataset multiple times 
 
-            # zero the parameter gradients
-            optimizerForMergedNetwork.zero_grad()
+            print("Time now: ", time.perf_counter())
 
-            # forward + backward + optimize
-            outputs = mergedNetwork(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizerForMergedNetwork.step()
+            running_loss = 0.0
+            for i, data in enumerate(trainloader, 0):
+                # get the inputs; data is a list of [inputs, labels]
+                inputs, labels = data
 
-            # print statistics
-            running_loss += loss.item()
-            if i % 500 == 499:    # print every 500 mini-batches
-                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 500:.3f}')
-                running_loss = 0.0
+                # zero the parameter gradients
+                optimizerForMergedNetwork.zero_grad()
 
-print('Finished Training')
+                # forward + backward + optimize
+                outputs = mergedNetwork(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizerForMergedNetwork.step()
+
+                # print statistics
+                running_loss += loss.item()
+                if i % 2000 == 1999:    # print every 500 mini-batches
+                    print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
+                    running_loss = 0.0
+    
+        torch.save(mergedNetwork,"D:\\School\\2023 Winter\\Term Project\\Program Output\\Merged Model ImageNet level {imageNetLevel} and Simple Model level {simpleModelLevel}.pt".format(imageNetLevel = indexOfImageNetLayer, simpleModelLevel = indexOfSimpleNetworkLayer))
+        print('Finished Training')
 
 #Below we compute all of the accuracies of the trained merged networks on a test set
 
+if accuraciesAlreadyComputed == False:
+    accuraciesForMergedNetworkTensor = torch.zeros((4,4))
+
+    for indexOfImageNetLayer in range(4):
+      for indexOfSimpleNetworkLayer in range(4):
+
+
+        if everythingAlreadyTrained == False:
+            mergedNetwork = mergedNetworks[indexOfImageNetLayer][indexOfSimpleNetworkLayer]
+        else:
+            mergedNetwork = torch.load("D:\\School\\2023 Winter\\Term Project\\Program Output\\Merged Model ImageNet level {imageNetLevel} and Simple Model level {simpleModelLevel}.pt".format(imageNetLevel = indexOfImageNetLayer, simpleModelLevel = indexOfSimpleNetworkLayer))
+  
+
+        correct = 0
+        total = 0
+        # since we're not training, we don't need to calculate the gradients for our outputs
+        with torch.no_grad():
+            for data in testloader:
+                images, labels = data
+                # calculate outputs by running images through the network
+                outputs = mergedNetwork(images)
+                # the class with the highest energy is what we choose as prediction
+
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+
+        print(f'Accuracy of the network on the 10000 test images: {100 * correct / total} %')
+        accuraciesForMergedNetworks[indexOfImageNetLayer].append( 100 * correct / total )
+
+        accuraciesForMergedNetworkTensor[indexOfImageNetLayer, indexOfSimpleNetworkLayer] = accuraciesForMergedNetworks[indexOfImageNetLayer][indexOfSimpleNetworkLayer]
+
+    torch.save(accuraciesForMergedNetworkTensor, "D:\\School\\2023 Winter\\Term Project\\Program Output\\Accuracies for Different Mergings.pt")
+
+else:
+    accuraciesForMergedNetworkTensor = torch.load("D:\\School\\2023 Winter\\Term Project\\Program Output\\Accuracies for Different Mergings.pt")
+
 for indexOfImageNetLayer in range(4):
-  for indexOfSimpleNetworkLayer in range(4):
+    for indexOfSimpleNetworkLayer in range(4):
 
-    mergedNetwork = mergedNetworks[indexOfImageNetLayer][indexOfSimpleNetworkLayer]
-
-    correct = 0
-    total = 0
-    index = 0
-    # since we're not training, we don't need to calculate the gradients for our outputs
-    with torch.no_grad():
-        for data in testloader:
-            images, labels = data
-            # calculate outputs by running images through the network
-            outputs = mergedNetwork(images)
-            # the class with the highest energy is what we choose as prediction
-            if(index % 100 == 99):
-              print("index: ", index)
-            index = index + 1
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-
-    print(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
-    accuraciesForMergedNetworks[indexOfImageNetLayer].append( 100 * correct // total )
-
-
+        print("Merged Model ImageNet level {imageNetLevel} and Simple Model level {simpleModelLevel}.pt".format(imageNetLevel = indexOfImageNetLayer, simpleModelLevel = indexOfSimpleNetworkLayer))
+        print("Corresponding accuracy: ", accuraciesForMergedNetworkTensor[indexOfImageNetLayer, indexOfSimpleNetworkLayer])
