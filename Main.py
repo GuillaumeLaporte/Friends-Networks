@@ -9,7 +9,7 @@ import time
 
 trainSimpleModel = False
 everythingAlreadyTrained = True
-accuraciesAlreadyComputed = True
+accuraciesAlreadyComputed = False
 
 #The following list contains the lower layers of the ImageNet model at different level. 
 #Each element of the list is a succession of layers up to a different level in the ImageNet model.
@@ -217,7 +217,8 @@ classes = ('plane', 'car', 'bird', 'cat',
 
 #We train below the simple model that specializes on classifiying Cifar10 images. We made a test on Google Colab
 #and we saw that there is no improvement in training the network over 8 epochs. The accuracy on a validation set does
-#not increase over 64%
+#not increase over 64% (in (.train()) mode (I don't think testing using the (.train()) mode is a problem here, isn't it? Since the only goal 
+#is seeing if things are improving)) after two more epochs of training.
 
 if trainSimpleModel == True:
     simpleModel = Net()
@@ -409,6 +410,7 @@ if accuraciesAlreadyComputed == False:
         else:
             mergedNetwork = torch.load("D:\\School\\2023 Winter\\Term Project\\Program Output\\Merged Model ImageNet level {imageNetLevel} and Simple Model level {simpleModelLevel}.pt".format(imageNetLevel = indexOfImageNetLayer, simpleModelLevel = indexOfSimpleNetworkLayer))
   
+        mergedNetwork.eval()
 
         correct = 0
         total = 0
