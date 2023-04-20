@@ -1,3 +1,7 @@
+#In this code, (simpleModel) is the Cifar10 network that we are talking about 
+#in the report. (imageNetModel) is the ImageNet network that we are also talking about
+#in the report
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,8 +11,15 @@ import torchvision
 import torchvision.transforms as transforms
 import time
 
+#Put the following to (True) is you want to retrain the Cifar10 network (simpleModel)
 trainSimpleModel = False
+
+#Put the following to (False) if you want to train (or have not trained) all of the different ways
+#of merging the Cifar10 and ImageNet networt together
 everythingAlreadyTrained = True
+
+#Put the following to (False) if the accuracies have not yet been computed
+#and you want to compute them
 accuraciesAlreadyComputed = False
 
 #The following list contains the lower layers of the ImageNet model at different level. 
@@ -61,9 +72,13 @@ class MergedNetwork(torch.nn.Module):
           listOfParameters.append(param)
 
         listOfParameters[0][:,:,:,:] = torch.zeros((outNumberOfChannels, self.numberOfInputChannelsInNewMergingLayer, kernelSize, kernelSize))
+
+        #The following two lines should deepcopy the weight parameters of the layer to be replaced
+        #; to put them as parameters of the layer (G)
         listOfParameters[0][:, numberOfOutputChannelsOfLowerLayersOfImageNetModel:,:,:] = layerOfSimpleModelToBeReplaced.state_dict()["weight"]
         listOfParameters[1][:] = layerOfSimpleModelToBeReplaced.state_dict()["bias"]
 
+        #Since we want to train layer (G), we unfreeze its parameters
         for param in self.newConvolutionLayer.parameters():
           param.requires_grad = True
 
@@ -80,6 +95,9 @@ class MergedNetwork(torch.nn.Module):
         lowerLayersImageNetOutput = self.lowerLayersOfImageNet(inputToImageNet)
 
         #Becareful here! We don't want to interpolate in the channel dimension!
+        #This interpolation is made because the ImageNet network does not necessarily
+        #output feature maps of the same sizes as the Cifar10 network (at various
+        #intermediate layers)
         lowerLayersImageNetOutput = F.interpolate(lowerLayersImageNetOutput, size = self.targetShapeOfImageNetOutput, mode = "bilinear")
 
         lowerLayersSimpleModelOutput = self.lowerLayersOfSimpleModel(x)
@@ -260,6 +278,11 @@ else:
 
 #Below we are selecting the lower layers of the ImageNet models and the simple model; as well as the upper layers of the simple model
 #We are also selecting the layer that is going to be replaced; whose parameters are going to be copied in the new layer (G)
+#The logic is complicated because we have to check (in the case of the Cifar10 network)
+#if a layer is a convolutional layer, and we also have to add by hand the activation functions
+#(nn.ReLU()) when reconstructing the lower and upper parts of the Cifar10 network, 
+#and store the layer to be replaced, and skip the layer to be replaced when we are selecting
+#only the lower and upper parts of the Cifar10 network.
 
 numberOfChildren = len(list(simpleModel.children()))
 
@@ -322,6 +345,8 @@ for partsOfSimpleModelIndex in range(4):
 
 #Below is the definition of some data that has to be passed to the MergedNetwork's constructor (the __init__ function), 
 #to specify the number of output channels, the kernel sizes, and the padding type of the new merging layer (G)
+#The characteristic of the layer (G) are based on the ones of the layer that it is
+#replacing
 
 specificationsOfLayerToBeReplaced0 = {}
 specificationsOfLayerToBeReplaced0["outChannels"] = 64
@@ -368,7 +393,7 @@ if everythingAlreadyTrained == False:
         criterion = nn.CrossEntropyLoss()
         optimizerForMergedNetwork = optim.SGD(mergedNetwork.parameters(), lr=0.001, momentum=0.9)
 
-
+        #As we said in the report, we only train for 2 epochs
         for epoch in range(2):  # loop over the dataset multiple times 
 
             print("Time now: ", time.perf_counter())
@@ -410,6 +435,7 @@ if accuraciesAlreadyComputed == False:
         else:
             mergedNetwork = torch.load("D:\\School\\2023 Winter\\Term Project\\Program Output\\Merged Model ImageNet level {imageNetLevel} and Simple Model level {simpleModelLevel}.pt".format(imageNetLevel = indexOfImageNetLayer, simpleModelLevel = indexOfSimpleNetworkLayer))
   
+        #We put the networks in (.eval()) mode to get the accuracies
         mergedNetwork.eval()
 
         correct = 0
@@ -436,6 +462,7 @@ if accuraciesAlreadyComputed == False:
 else:
     accuraciesForMergedNetworkTensor = torch.load("D:\\School\\2023 Winter\\Term Project\\Program Output\\Accuracies for Different Mergings.pt")
 
+#Below we just print the merged models' accuracies to see them
 for indexOfImageNetLayer in range(4):
     for indexOfSimpleNetworkLayer in range(4):
 
